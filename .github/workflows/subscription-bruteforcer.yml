@@ -70,6 +70,7 @@ on:
           
 permissions:
   contents: write
+  actions: write
 
 jobs:
   Fetching:
@@ -599,7 +600,16 @@ jobs:
                   )
 
                   if ($stopOnHit -eq "true") {
-                      Write-Host "[STOP] Result found. Stopping Sequential Mode."
+                      Write-Host "[STOP] Result found. Will stopping current job and disable workflows."
+                  
+                      gh workflow disable "${{ github.workflow }}"
+                  
+                      if ($LASTEXITCODE -ne 0) {
+                          Write-Host "[ERROR] Failed to disable workflow."
+                          exit 1
+                      }
+                  
+                      Write-Host "[STOP] Workflow disabled successfully."
                       break
                   }
               }
