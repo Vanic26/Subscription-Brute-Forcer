@@ -473,7 +473,7 @@ jobs:
           Write-Host "Characters to generate   : $genLen"
           Write-Host ""
 
-            # ============================================================
+      # ============================================================
       # COMPARE INPUTS AND LAST CHECKPOINT
       # ============================================================
       - name: Compare Inputs And Last Runner States
