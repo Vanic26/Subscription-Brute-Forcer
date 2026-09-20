@@ -473,11 +473,11 @@ jobs:
           Write-Host "Characters to generate   : $genLen"
           Write-Host ""
 
-      # ============================================================
+            # ============================================================
       # COMPARE INPUTS AND LAST CHECKPOINT
       # ============================================================
       - name: Compare Inputs And Last Runner States
-        if: ${{ env.RUN_MODE == 'Sequential Mode' }}
+        if: ${{ steps.load_inputs.outputs.mode == 'Sequential Mode' }}
         shell: powershell
         run: |
 
@@ -495,24 +495,8 @@ jobs:
           if (Test-Path $stateFile) {
 
               foreach ($line in Get-Content $stateFile) {
-              # Remove whitespace and invisible Unicode characters at the beginning
-              $line = $line.Trim()
-              $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
-          
-              if ($line.StartsWith("BASE_URL=")) {
-                  $savedBase = $line.Substring("BASE_URL=".Length).Trim()
-              }
-              elseif ($line.StartsWith("SUFFIX_LENGTH=")) {
-                  $savedCharCount = $line.Substring("SUFFIX_LENGTH=".Length).Trim()
-              }
-              elseif ($line.StartsWith("KNOWN_PREFIX=")) {
-                  $savedPrefix = $line.Substring("KNOWN_PREFIX=".Length).Trim()
-              }
-              elseif ($line.StartsWith("LAST_CHECKPOINT=")) {
-                  $savedCheckpoint = $line.Substring("LAST_CHECKPOINT=".Length).Trim()
-              }
-          }
 
+                  # Remove whitespace and invisible Unicode characters at the beginning
                   $line = $line.Trim()
                   $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
 
