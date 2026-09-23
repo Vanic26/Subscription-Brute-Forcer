@@ -951,10 +951,20 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
+      
           git add found_subs.txt last_runner_states.txt
-
+      
           if ! git diff --cached --quiet; then
             git commit -m "Update brute forcer state"
-            git push
+      
+            echo "[INFO] Syncing with remote main before push..."
+      
+            git fetch origin main
+            git rebase origin/main
+      
+            echo "[INFO] Pushing latest results and checkpoint..."
+      
+            git push origin HEAD:main
+          else
+            echo "[INFO] No changes to commit."
           fi
