@@ -138,31 +138,31 @@ jobs:
                   if ($line -match '^MODE=(.*)$') {
                       $saved.MODE = $Matches[1]
                   }
-                  elseif ($line -match '^FULL_URL=(.*)$') {
+                  elseif ($line -match '^FULL URL=(.*)$') {
                       $saved.FULL_URL = $Matches[1]
                   }
-                  elseif ($line -match '^BASE_URL=(.*)$') {
+                  elseif ($line -match '^BASE URL=(.*)$') {
                       $saved.BASE_URL = $Matches[1]
                   }
-                  elseif ($line -match '^SUFFIX_LENGTH=(.*)$') {
+                  elseif ($line -match '^SUFFIX LENGTH=(.*)$') {
                       $saved.SUFFIX_LENGTH = $Matches[1]
                   }
-                  elseif ($line -match '^KNOWN_PREFIX=(.*)$') {
+                  elseif ($line -match '^KNOWN PREFIX=(.*)$') {
                       $saved.KNOWN_PREFIX = $Matches[1]
                   }
-                  elseif ($line -match '^SEQUENTIAL_DIRECTION=(.*)$') {
+                  elseif ($line -match '^SEQUENTIAL DIRECTION=(.*)$') {
                       $saved.SEQUENTIAL_DIRECTION = $Matches[1]
                   }
-                  elseif ($line -match '^GENERATED_POSITION=(.*)$') {
+                  elseif ($line -match '^GENERATED POSITION=(.*)$') {
                       $saved.GENERATED_POSITION = $Matches[1]
                   }
-                  elseif ($line -match '^DELAY_MS=(.*)$') {
+                  elseif ($line -match '^DELAY MS=(.*)$') {
                       $saved.DELAY_MS = $Matches[1]
                   }
-                  elseif ($line -match '^STOP_ON_HIT=(.*)$') {
+                  elseif ($line -match '^STOP ON HIT=(.*)$') {
                       $saved.STOP_ON_HIT = $Matches[1]
                   }
-                  elseif ($line -match '^LAST_CHECKPOINT=(.*)$') {
+                  elseif ($line -match '^LAST CHECKPOINT=(.*)$') {
                       $saved.LAST_CHECKPOINT = $Matches[1]
                   }
               }
