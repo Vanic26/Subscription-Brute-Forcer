@@ -663,6 +663,11 @@ jobs:
           }
 
           # ------------------------------------------------------------
+          # Calculate total number of possible generated values
+          # ------------------------------------------------------------
+          $totalSequences = [math]::Pow($baseN, $genLen)
+          
+          # ------------------------------------------------------------
           # Resume from previous checkpoint
           # ------------------------------------------------------------
           $seq = 0
@@ -779,7 +784,27 @@ jobs:
           # ------------------------------------------------------------
           for ($test = 1; ; $test++) {
 
-              $n = $seq
+          # --------------------------------------------------------
+          # Stop when the complete sequence has been generated
+          # --------------------------------------------------------
+          if ($seq -ge $totalSequences) {
+              Write-Host ""
+              Write-Host "[COMPLETE] All sequential values have been generated."
+              Write-Host "[COMPLETE] Total sequences checked: $totalSequences"
+              Write-Host "[STOP] No result found. Will stop current job and disabling workflow."
+      
+              gh workflow disable "${{ github.workflow }}"
+      
+              if ($LASTEXITCODE -ne 0) {
+                  Write-Host "[ERROR] Failed to disable workflow."
+                  exit 1
+              }
+      
+              Write-Host "[STOP] Workflow disabled successfully."
+              break
+          }
+      
+          $n = $seq
 
               # Create generated part
               $partChars = New-Object char[] $genLen
@@ -876,7 +901,7 @@ jobs:
                   # ----------------------------------------------------
                   if ($stopOnHit -eq "true") {
 
-                      Write-Host "[STOP] Result found. Stopping current job and disabling this GitHub Actions workflow."
+                      Write-Host "[STOP] Result found. Will stop current job and disabling workflow."
 
                       gh workflow disable "${{ github.workflow }}"
 
