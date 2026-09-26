@@ -146,6 +146,7 @@ Write-Host "Generated position    : $runGeneratedPosition"
 Write-Host "Delay ms              : $runDelayMs"
 Write-Host "Stop on hit           : $runStopOnHit"
 Write-Host "============================================"
+Write-Host ""
 
 # ------------------------------------------------------------
 # Expose effective inputs as STEP OUTPUTS.
