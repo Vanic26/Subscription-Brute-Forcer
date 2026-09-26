@@ -23,9 +23,10 @@ if (Test-Path $resultFile) {
     Set-Content -Path $resultFile -Value $uniqueResults
 }
 
+Write-Host ""
+Write-Host "========================================="
 Write-Host "[STATUS] Stop on result hit: '$stopOnHit'"
 Write-Host "[STATUS] Sequential direction: '$direction'"
-Write-Host "[STATUS] Starting sequential checking..."
 
 # ------------------------------------------------------------
 # Calculate generated length
@@ -66,6 +67,8 @@ if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
 
             Write-Host "[RESUME] Checkpoint does not match the current known prefix."
             Write-Host "[RESUME] Starting from 0."
+            Write-Host "========================================="
+            Write-Host ""
             $lastCheckpoint = ""
         }
     }
@@ -81,6 +84,8 @@ if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
 
             Write-Host "[RESUME] Checkpoint does not match the current known prefix."
             Write-Host "[RESUME] Starting from 0."
+            Write-Host "========================================="
+            Write-Host ""
             $lastCheckpoint = ""
         }
     }
@@ -89,6 +94,8 @@ if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
 
         Write-Host "[RESUME] Checkpoint length does not match current generated length."
         Write-Host "[RESUME] Starting from 0."
+        Write-Host "========================================="
+        Write-Host ""
         $seq = 0
     }
     else {
@@ -146,12 +153,16 @@ if (-not [string]::IsNullOrWhiteSpace($lastCheckpoint)) {
 
         Write-Host "[RESUME] Previous checkpoint: $lastCheckpoint"
         Write-Host "[RESUME] Starting from sequence: $seq"
+        Write-Host "========================================="
+        Write-Host ""
     }
 }
 else {
 
     Write-Host "[RESUME] No previous checkpoint."
     Write-Host "[RESUME] Starting from sequence 0."
+    Write-Host "========================================="
+    Write-Host ""
 }
 
 # ------------------------------------------------------------
@@ -165,8 +176,8 @@ for ($test = 1; ; $test++) {
     if ($seq -ge $totalSequences) {
         Write-Host ""
         Write-Host "[COMPLETE] All sequential values have been generated."
-        Write-Host "[COMPLETE] Total sequences checked: $totalSequences"
-        Write-Host "[STOP] No result found. Will stop current job and disabling workflow."
+        Write-Host "[DONE] Total sequences checked: $totalSequences"
+        Write-Host "[FAILED] No result found. Will stop current job and disabling workflow."
 
         gh workflow disable "$workflowName"
 
@@ -281,8 +292,8 @@ LAST CHECKPOINT=$suffix
         # STOP ON HIT
         # ----------------------------------------------------
         if ($stopOnHit -eq "true") {
-
-            Write-Host "[STOP] Result found. Will stop current job and disabling workflow."
+            Write-Host ""
+            Write-Host "[SUCCESS] Result found. Will stop current job and disabling workflow."
 
             gh workflow disable "$workflowName"
 
