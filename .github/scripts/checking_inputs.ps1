@@ -63,9 +63,9 @@ if (Test-Path $stateFile) {
 # ------------------------------------------------------------
 if ($env:GITHUB_EVENT_NAME_INPUT -eq "schedule") {
     Write-Host ""
+    Write-Host "============================================"
     Write-Host "[MODE] Scheduled run."
     Write-Host "[MODE] Loading latest inputs from last_runner_states.txt"
-    Write-Host ""
 
     if ([string]::IsNullOrWhiteSpace($saved.MODE)) {
         Write-Host "[ERROR] No saved MODE found in last_runner_states.txt."
