@@ -9,8 +9,10 @@ if ($genLen -lt 1) {
     Write-Host "[ERROR] Known prefix is more than or equal to total suffix count."
     exit 1
 }
-
+Write-Host ""
+Write-Host "================================"
 Write-Host "Total suffix count       : $charCount"
 Write-Host "Known prefix count       : $prefixLen"
 Write-Host "Characters to generate   : $genLen"
+Write-Host "================================"
 Write-Host ""
