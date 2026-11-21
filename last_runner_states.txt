@@ -1,10 +1,10 @@
 MODE=Sequential Mode
 FULL URL=
-BASE URL=https://api2.nimenshishangdi.cc/dazhutou/
+BASE URL=https://sufo.xueshan.shop/api/xueshan/
 SUFFIX LENGTH=32
-KNOWN PREFIX=e3bd8874beaa4f541a57f0c8f3b75c
-SEQUENTIAL DIRECTION=Last digit first
-GENERATED POSITION=Back of known prefix
-DELAY MS=1000
+KNOWN PREFIX=b521ff71cb8666f7e5862277f44cbf3
+SEQUENTIAL DIRECTION=First digit first
+GENERATED POSITION=Front of known prefix
+DELAY MS=100
 STOP ON HIT=true
-LAST CHECKPOINT=e3bd8874beaa4f541a57f0c8f3b75czz
+LAST CHECKPOINT=kb521ff71cb8666f7e5862277f44cbf3
